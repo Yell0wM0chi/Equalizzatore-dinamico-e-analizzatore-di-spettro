@@ -1,6 +1,9 @@
 /*
   ==============================================================================
     PluginEditor.cpp
+    ----------------------------------------------------------------------------
+    Questo file si occupa di costruire concretamente la finestra del plugin,
+    posizionando manopole, pulsanti e collegandoli al motore audio.
   ==============================================================================
 */
 
@@ -10,10 +13,11 @@
 AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor (AudioPluginAudioProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p)
 {
-    setLookAndFeel(&stileCustom);
+    setLookAndFeel(&stileCustom); // Applica lo stile estetico custom
 
-    addAndMakeVisible(visualizzatoreSpettro);
+    addAndMakeVisible(visualizzatoreSpettro); // Rende visibili i grafici
 
+    // --- PULSANTE PER CARICARE IL FILE AUDIO ---
     pulsanteCaricaFile.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff2A323D));
     pulsanteCaricaFile.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
     pulsanteCaricaFile.onClick = [this]()
@@ -36,6 +40,7 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor (AudioPluginAud
     };
     addAndMakeVisible(pulsanteCaricaFile);
 
+    // --- PULSANTE DI PLAY / PAUSA ---
     pulsantePlayStop.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff00E676));
     pulsantePlayStop.setColour(juce::TextButton::textColourOffId, juce::Colours::black);
     pulsantePlayStop.onClick = [this]()
@@ -47,6 +52,7 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor (AudioPluginAud
     };
     addAndMakeVisible(pulsantePlayStop);
 
+    // --- CONFIGURAZIONE E COLLEGAMENTO DI TUTTE LE MANOPOLE ---
     configuraManopola(manopolaGuadagnoBassi,   "lowGain",   " dB");
     configuraManopola(manopolaFrequenzaBassi,  "lowFreq",   " Hz");
     configuraManopola(manopolaGuadagnoMedi,    "midGain",   " dB");
@@ -57,8 +63,8 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor (AudioPluginAud
     configuraManopola(manopolaSaturazioneDrive, "drive",     "x");
     configuraManopola(manopolaSogliaDinamica,  "threshold", " dB");
 
-    startTimerHz(60);
-    setSize (920, 590);
+    startTimerHz(60); // Frequenza di aggiornamento schermo (60 FPS)
+    setSize (920, 590); // Dimensioni finestra
 }
 
 AudioPluginAudioProcessorEditor::~AudioPluginAudioProcessorEditor()
@@ -66,6 +72,7 @@ AudioPluginAudioProcessorEditor::~AudioPluginAudioProcessorEditor()
     setLookAndFeel(nullptr);
 }
 
+// Funzione helper per evitare ripetizioni durante l'impostazione delle manopole
 void AudioPluginAudioProcessorEditor::configuraManopola(juce::Slider& manopola, const juce::String& idParametro, const juce::String& suffissoUnita)
 {
     manopola.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
@@ -74,10 +81,12 @@ void AudioPluginAudioProcessorEditor::configuraManopola(juce::Slider& manopola, 
     manopola.setMouseDragSensitivity(150);
     addAndMakeVisible(manopola);
 
+    // Collega automaticamente la manopola visiva al relativo parametro dell'engine audio
     collegamentiParametri.push_back(
         std::make_unique<SliderAttachment>(audioProcessor.alberoParametriPlugin, idParametro, manopola));
 }
 
+// Timer a 60Hz per inviare i dati audio alla grafica
 void AudioPluginAudioProcessorEditor::timerCallback()
 {
     if (audioProcessor.bloccoAudioProntoPerGUI)
@@ -96,10 +105,12 @@ void AudioPluginAudioProcessorEditor::timerCallback()
     }
 }
 
+// Disegna lo sfondo e i riquadri contenitivi colorati per le varie sezioni
 void AudioPluginAudioProcessorEditor::paint (juce::Graphics& g)
 {
-    g.fillAll (juce::Colour (0xff1A1D24));
+    g.fillAll (juce::Colour (0xff1A1D24)); // Sfondo scuro
 
+    // Barra del titolo
     g.setColour(juce::Colour(0xff0D1015));
     g.fillRect(0, 0, getWidth(), 35);
     
@@ -107,6 +118,7 @@ void AudioPluginAudioProcessorEditor::paint (juce::Graphics& g)
     g.setFont(juce::FontOptions(14.0f, juce::Font::bold));
     g.drawText("DSP AUDIO ANALYZER & DYNAMIC EQUALIZER", 15, 8, 450, 20, juce::Justification::left);
 
+    // Funzione per disegnare le schede contenitore
     auto disegnaCardComandi = [&](juce::Rectangle<float> area, juce::String titolo, juce::Colour colore)
     {
         g.setColour(juce::Colour(0xff12161F));
@@ -120,11 +132,13 @@ void AudioPluginAudioProcessorEditor::paint (juce::Graphics& g)
         g.drawText(titolo, static_cast<int>(area.getX() + 10), static_cast<int>(area.getY() + 6), static_cast<int>(area.getWidth() - 20), 15, juce::Justification::centred);
     };
 
+    // Quattro schede di controllo
     disegnaCardComandi(juce::Rectangle<float>(15,  370, 185, 205), "LOW BAND",          juce::Colour(0xffFFD700));
     disegnaCardComandi(juce::Rectangle<float>(210, 370, 265, 205), "MID BAND (DYNAMIC)", juce::Colour(0xff00E5FF));
     disegnaCardComandi(juce::Rectangle<float>(485, 370, 185, 205), "HIGH BAND",         juce::Colour(0xffFF4081));
     disegnaCardComandi(juce::Rectangle<float>(680, 370, 225, 205), "PROCESSING",        juce::Colours::white);
 
+    // Testi ed etichette delle manopole
     g.setFont(juce::FontOptions(10.0f, juce::Font::bold));
     g.setColour(juce::Colour(0xffA0ABBA));
 
@@ -144,6 +158,7 @@ void AudioPluginAudioProcessorEditor::paint (juce::Graphics& g)
     g.drawText("THRESH",     800, YEtichette, 85, 15, juce::Justification::centred);
 }
 
+// Posizionamento esatto in pixel di ogni elemento della GUI
 void AudioPluginAudioProcessorEditor::resized()
 {
     pulsanteCaricaFile.setBounds(630, 6, 150, 22);

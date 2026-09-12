@@ -1,6 +1,10 @@
 /*
   ==============================================================================
     VisualizzatoreSpettro.cpp
+    ----------------------------------------------------------------------------
+    In questo file viene implementata la logica grafica che calcola e disegna
+    i 4 schermi: l'oscilloscopio blu, lo spettro FFT rosa/viola, la curva EQ azzurra
+    e il grafico della saturazione con il pallino dorato reattivo al volume.
   ==============================================================================
 */
 
@@ -8,14 +12,16 @@
 
 VisualizzatoreSpettro::VisualizzatoreSpettro()
 {
+    // Azzera la memoria all'avvio
     juce::zeromem(bufferWaveformLive, sizeof(bufferWaveformLive));
     juce::zeromem(livelloSpettroIstantaneo, sizeof(livelloSpettroIstantaneo));
     juce::zeromem(tracciaPicchiMassimi, sizeof(tracciaPicchiMassimi));
-    startTimerHz(60);
+    startTimerHz(60); // Frequenza di ridisegno (60 FPS)
 }
 
 VisualizzatoreSpettro::~VisualizzatoreSpettro() {}
 
+// Prende i campioni audio dell'engine e calcola la Trasformata di Fourier (FFT)
 void VisualizzatoreSpettro::riceviCampioniAudioPerFFT(const float* bufferIngresso, int dimensioneBuffer)
 {
     if (bufferIngresso == nullptr || dimensioneBuffer <= 0)
@@ -23,9 +29,10 @@ void VisualizzatoreSpettro::riceviCampioniAudioPerFFT(const float* bufferIngress
 
     int campioniDaCopiare = std::min(dimensioneBuffer, dimensioneFFT);
 
+    // Salva l'onda audio per l'oscilloscopio
     std::memcpy(bufferWaveformLive, bufferIngresso, sizeof(float) * static_cast<size_t>(campioniDaCopiare));
 
-    // Calcolo del picco istantaneo per il tracciamento sul grafico di saturazione
+    // Trova l'ampiezza massima istantanea (per il pallino luminoso della saturazione)
     float maxAmp = 0.0f;
     for (int i = 0; i < campioniDaCopiare; ++i)
     {
@@ -38,9 +45,11 @@ void VisualizzatoreSpettro::riceviCampioniAudioPerFFT(const float* bufferIngress
     juce::zeromem(campioniTempFFT, sizeof(campioniTempFFT));
     std::memcpy(campioniTempFFT, bufferIngresso, sizeof(float) * static_cast<size_t>(campioniDaCopiare));
 
+    // Applica la finestra di Hann e calcola le frequenze con la FFT
     finestraDiHann.multiplyWithWindowingTable(campioniTempFFT, dimensioneFFT);
     calcolatoreFFT.performFrequencyOnlyForwardTransform(campioniTempFFT);
 
+    // Converte le ampiezze uscite dalla FFT in scala Decibel (dB) e le scala da 0.0 a 1.0 per il disegno
     for (int i = 0; i < dimensioneFFT / 2; ++i)
     {
         float livelloIn_dB = juce::Decibels::gainToDecibels(campioniTempFFT[i]) - juce::Decibels::gainToDecibels(static_cast<float>(dimensioneFFT));
@@ -48,6 +57,7 @@ void VisualizzatoreSpettro::riceviCampioniAudioPerFFT(const float* bufferIngress
 
         livelloSpettroIstantaneo[i] = valoreNorm;
 
+        // Peak Hold: tiene i picchi piú alti e li fa scendere piano piano
         if (valoreNorm > tracciaPicchiMassimi[i])
             tracciaPicchiMassimi[i] = valoreNorm;
         else
@@ -66,9 +76,10 @@ void VisualizzatoreSpettro::impostaFiltriDiRiferimento(FiltroBiquad low, FiltroB
 
 void VisualizzatoreSpettro::timerCallback()
 {
-    repaint();
+    repaint(); // Forza il ridisegno dei grafici a 60 FPS
 }
 
+// Disegna il riquadro di sfondo con la griglia e gli assi con i numeri
 juce::Rectangle<float> VisualizzatoreSpettro::disegnaGrigliaEAssi(juce::Graphics& g, juce::Rectangle<float> area, juce::String titolo, juce::String etichettaY)
 {
     g.setColour(juce::Colour(0xff12161F));
@@ -90,6 +101,7 @@ juce::Rectangle<float> VisualizzatoreSpettro::disegnaGrigliaEAssi(juce::Graphics
                                        area.getWidth() - marginX - 10.0f,
                                        area.getHeight() - marginYTop - marginYBot);
 
+    // Linee orizzontali dell'asse Y
     g.setFont(juce::FontOptions(9.0f, juce::Font::plain));
     const float valoriY[] = { 1.0f, 0.5f, 0.0f, -0.5f, -1.0f };
 
@@ -106,6 +118,7 @@ juce::Rectangle<float> VisualizzatoreSpettro::disegnaGrigliaEAssi(juce::Graphics
         g.drawText(txtY, static_cast<int>(area.getX() + 2.0f), static_cast<int>(yPos - 6.0f), static_cast<int>(marginX - 4.0f), 12, juce::Justification::right);
     }
 
+    // Linee verticali dell'asse X
     const float valoriX[] = { 0.00f, 0.25f, 0.50f, 0.75f, 1.00f };
 
     for (float val : valoriX)
@@ -122,11 +135,12 @@ juce::Rectangle<float> VisualizzatoreSpettro::disegnaGrigliaEAssi(juce::Graphics
     return areaGrafico;
 }
 
+// 1. DISENI DELL'OSCILLOSCOPIO (Linea Blu)
 void VisualizzatoreSpettro::disegnaOscilloscopioLive(juce::Graphics& g, juce::Rectangle<float> area)
 {
     auto plot = disegnaGrigliaEAssi(g, area, "1. OSCILLOSCOPIO LIVE (Tempo)", "Ampl");
 
-    // RITAGLIO RIGIDO: Garantisce che la linea non esca mai dai bordi del rettangolo
+    // Limita rigidamente il disegno dentro la griglia
     juce::Graphics::ScopedSaveState saveState(g);
     g.reduceClipRegion(plot.toNearestInt());
 
@@ -152,6 +166,7 @@ void VisualizzatoreSpettro::disegnaOscilloscopioLive(juce::Graphics& g, juce::Re
     g.strokePath(traccia, juce::PathStrokeType(1.6f));
 }
 
+// 2. DISEGNO DELLO SPETTRO FFT LIVE & PEAK HOLD (Linea Viola e Rosa)
 void VisualizzatoreSpettro::disegnaSpettroFFTLive(juce::Graphics& g, juce::Rectangle<float> area)
 {
     auto plot = disegnaGrigliaEAssi(g, area, "2. SPETTRO FFT LIVE & PEAK HOLD", "dB");
@@ -166,6 +181,7 @@ void VisualizzatoreSpettro::disegnaSpettroFFTLive(juce::Graphics& g, juce::Recta
     for (int x = 0; x < larghezzaPixel; ++x)
     {
         float normX = static_cast<float>(x) / static_cast<float>(larghezzaPixel);
+        // Scala logaritmica delle frequenze da 20 Hz a 20.000 Hz
         float freqHz = 20.0f * std::pow(20000.0f / 20.0f, normX);
 
         int binIdx = static_cast<int>((freqHz / (sampleRateRiferimento / 2.0f)) * (dimensioneFFT / 2));
@@ -191,13 +207,16 @@ void VisualizzatoreSpettro::disegnaSpettroFFTLive(juce::Graphics& g, juce::Recta
         }
     }
 
+    // Linea rosa trasparente dei picchi
     g.setColour(juce::Colour(0x88FF4081));
     g.strokePath(tracciaPeak, juce::PathStrokeType(1.0f));
 
+    // Spettro istantaneo viola
     g.setColour(juce::Colour(0xffE040FB));
     g.strokePath(tracciaFFT, juce::PathStrokeType(1.6f));
 }
 
+// 3. DISEGNO DELLA CURVA DELL'EQUALIZZATORE (Linea Azzurra)
 void VisualizzatoreSpettro::disegnaCurvaEQLive(juce::Graphics& g, juce::Rectangle<float> area)
 {
     auto plot = disegnaGrigliaEAssi(g, area, "3. RISPOSTA EQ TEORICA |H(e^jw)|", "dB");
@@ -214,6 +233,7 @@ void VisualizzatoreSpettro::disegnaCurvaEQLive(juce::Graphics& g, juce::Rectangl
         float normX = static_cast<float>(x) / static_cast<float>(larghezzaPixel);
         float freqHz = 20.0f * std::pow(20000.0f / 20.0f, normX);
 
+        // Somma la risposta in frequenza dei 3 filtri (Bassi + Medi + Alti)
         float guadagno_dB = filtroLowRif.calcolaRispostaInFrequenza_dB(freqHz, sampleRateRiferimento)
                           + filtroMidRif.calcolaRispostaInFrequenza_dB(freqHz, sampleRateRiferimento)
                           + filtroHighRif.calcolaRispostaInFrequenza_dB(freqHz, sampleRateRiferimento);
@@ -230,6 +250,7 @@ void VisualizzatoreSpettro::disegnaCurvaEQLive(juce::Graphics& g, juce::Rectangl
     g.strokePath(tracciaEQ, juce::PathStrokeType(2.0f));
 }
 
+// 4. DISEGNO DELLA CURVA DI SATURAZIONE TANH (Linea Rossa e Pallino Dorato)
 void VisualizzatoreSpettro::disegnaSaturazioneLive(juce::Graphics& g, juce::Rectangle<float> area)
 {
     auto plot = disegnaGrigliaEAssi(g, area, "4. SATURAZIONE TIMBRO tanh(x * Drive)", "Out");
@@ -241,7 +262,7 @@ void VisualizzatoreSpettro::disegnaSaturazioneLive(juce::Graphics& g, juce::Rect
     bool primo = true;
     int larghezzaPixel = static_cast<int>(plot.getWidth());
 
-    // 1. Disegno della Curva di Trasferimento reattiva alla manopola DRIVE
+    // Disegna la curva sigmoide in base alla manopola DRIVE
     for (int x = 0; x < larghezzaPixel; ++x)
     {
         float normX = static_cast<float>(x) / static_cast<float>(larghezzaPixel);
@@ -259,7 +280,7 @@ void VisualizzatoreSpettro::disegnaSaturazioneLive(juce::Graphics& g, juce::Rect
     g.setColour(juce::Colour(0xffFF1744));
     g.strokePath(tracciaTanh, juce::PathStrokeType(1.8f));
 
-    // 2. Indicatore Dinamico del Punto Operativo del Suono (Pallino Luminoso)
+    // Pallino luminoso dorato reattivo al volume del suono in riproduzione
     float xPointNorm = juce::jmap(ampiezzaPiccoIstantaneo, 0.0f, 1.0f, 0.5f, 0.95f);
     float inValPoint = juce::jmap(xPointNorm, 0.0f, 1.0f, -1.5f, 1.5f);
     float outValPoint = std::tanh(inValPoint * valoreDriveRiferimento);
@@ -273,6 +294,7 @@ void VisualizzatoreSpettro::disegnaSaturazioneLive(juce::Graphics& g, juce::Rect
     g.drawEllipse(posXDot - 4.0f, posYDot - 4.0f, 8.0f, 8.0f, 1.2f);
 }
 
+// Dispone i 4 grafici in una griglia 2x2
 void VisualizzatoreSpettro::paint(juce::Graphics& g)
 {
     auto areaTotale = getLocalBounds().toFloat();
