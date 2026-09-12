@@ -1,0 +1,20 @@
+# Cartelle di Build e file generati dagli IDE
+/Builds/
+/build/
+*.xcodeproj/
+*.sln
+*.vcxproj*
+*.vcxproj.user
+
+# File binari e plugin compilati
+*.vst3
+*.component
+*.exe
+*.app
+*.so
+*.dylib
+
+# File temporanei di sistema e IDE
+.DS_Store
+.vs
+.idea
